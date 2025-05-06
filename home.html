@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Aquatic Boid Simulation</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #a0e4f1;
+      }
+      #gui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        width: 125px;
+        background: rgba(255, 255, 255, 0.85);
+        padding: 15px;
+        border-radius: 8px;
+        font-family: sans-serif;
+        font-size: 14px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        z-index: 10;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "p5": "https://esm.sh/p5@1.9.0"
+        }
+      }
+    </script>
+  </head>
+
+  <body>
+    <div id="gui">
+      <label>Boids: <span id="boidCountLabel">100</span></label
+      ><br />
+      <input type="range" id="boidCount" min="10" max="500" value="100" /><br />
+
+      <label>Separation: <span id="sepLabel">1</span></label
+      ><br />
+      <input type="range" id="sepSlider" min="0" max="5" value="1" step="0.1" /><br />
+
+      <label>Alignment: <span id="alignLabel">1</span></label
+      ><br />
+      <input type="range" id="alignSlider" min="0" max="5" value="1" step="0.1" /><br />
+
+      <label>Cohesion: <span id="cohLabel">1</span></label
+      ><br />
+      <input type="range" id="cohSlider" min="0" max="5" value="1" step="0.1" /><br />
+
+      <label>Max Force: <span id="maxForceLabel">0.1</span></label
+      ><br />
+      <input type="range" id="maxForceSlider" min="0.01" max="0.5" value="0.1" step="0.01" /><br />
+
+      <label>Max Speed: <span id="maxSpeedLabel">4</span></label
+      ><br />
+      <input type="range" id="maxSpeedSlider" min="1" max="8" value="4" step="0.1" /><br />
+
+      <label>Acceleration: <span id="accelLabel">1.0</span></label
+      ><br />
+      <input type="range" id="accelSlider" min="0.1" max="2" value="1" step="0.1" /><br />
+
+      <label>Vision Range: <span id="perLabel">50</span></label
+      ><br />
+      <input type="range" id="perSlider" min="1" max="100" value="50" step="1" /><br />
+    </div>
+
+    <script type="module">
+      import p5 from "p5";
+
+      class Boid {
+        constructor(sk) {
+          this.sk = sk;
+          this.position = sk.createVector(sk.random(sk.width), sk.random(sk.height)); // Initial position of the boid
+          this.velocity = p5.Vector.random2D().setMag(sk.random(1, 4)); // Random initial velocity within a fast range
+          this.acceleration = sk.createVector(); // Acceleration vector (updated each frame)
+          this.maxForce = 0.1; // Default max force a boid can apply to itself (limits sharp turns)
+          this.maxSpeed = 4; // Default max speed (prevents boids from moving too fast)
+          this.perception = 50; // Default max percention (distance to consider other boids movement)
+
+          const hueChoices = [0, 45, 90, 200]; // red, yellow, green, or blue
+          const hue = sk.random(hueChoices);
+          const lightness = sk.random(50, 90); // 50 = dark, 90 = light
+          this.color = sk.color(hue, 90, lightness, 100); // Set the color of the boid
+        }
+
+        // Flocking behavior: combines separation, alignment, and cohesion
+        flock(boids, sepWeight, alignWeight, cohWeight, maxForce, maxSpeed, accelScale, perceptionVal) {
+          const sep = this.separate(boids).mult(sepWeight); // Separation behavior: keeps boids from crowding
+          const align = this.align(boids).mult(alignWeight); // Alignment behavior: aligns boid's velocity with neighbors
+          const coh = this.cohesion(boids).mult(cohWeight); // Cohesion behavior: moves boid toward the center of nearby boids
+          this.maxForce = maxForce; // Max force limits sharp changes in direction
+          this.maxSpeed = maxSpeed; // Max speed keeps boid movement in check
+          this.minSpeed = 1.0; // Min Speed so boids are never frozen.
+          this.perception = perceptionVal; // Max distance a boid considers the movement of other boids
+
+          this.acceleration.set(0, 0); // Reset acceleration each frame
+          this.acceleration.add(sep).add(align).add(coh).mult(accelScale); // Combine behaviors and scale acceleration
+        }
+
+        // Update the boid's position based on its velocity and acceleration
+        update() {
+          // Update velocity by adding acceleration, and constrain to max speed
+          this.velocity.add(this.acceleration).limit(this.maxSpeed);
+
+          /// Ensure boids are never frozen
+          if (this.velocity.mag() < this.minSpeed) {
+            this.velocity.setMag(this.minSpeed);
+          }
+
+          // Update position based on velocity
+          this.position.add(this.velocity);
+        }
+
+        // Handle wrapping around screen edges
+        edges() {
+          const { width, height } = this.sk;
+          if (this.position.x > width) this.position.x = 0;
+          if (this.position.x < 0) this.position.x = width;
+          if (this.position.y > height) this.position.y = 0;
+          if (this.position.y < 0) this.position.y = height;
+        }
+
+        show() {
+          const sk = this.sk;
+          sk.push();
+          sk.translate(this.position.x, this.position.y);
+          sk.rotate(this.velocity.heading()); // Rotate boid based on its velocity direction
+
+          // Draw the fish body
+          sk.stroke(0, 0, 0, 50);
+          sk.strokeWeight(0.5);
+          sk.fill(this.color);
+
+          // Fish body shape
+          sk.beginShape();
+          sk.vertex(0, -4); // top front
+          sk.vertex(-2, 3); // bottom left
+          sk.vertex(10, 0); // nose
+          sk.vertex(-2, -3); // bottom right
+          sk.endShape(sk.CLOSE);
+
+          // Draw a short trail behind the fish to show movement
+          sk.strokeWeight(1);
+          sk.stroke(0, 0, 0, 10); // Semi-transparent trail
+          sk.line(6, 0, 10, 0);
+
+          sk.pop();
+        }
+
+        // Separation behavior: Boids steer away from each other if too close
+        separate(boids) {
+          const steer = this.sk.createVector();
+          let total = 0;
+          const minSeparation = 10;
+
+          for (let other of boids) {
+            const d = this.position.dist(other.position);
+            if (other !== this && d < this.perception) {
+              let diff = p5.Vector.sub(this.position, other.position);
+              diff.normalize();
+              diff.div(d); // inverse falloff
+              steer.add(diff);
+              total++;
+            }
+          }
+
+          if (total > 0) {
+            steer.div(total);
+            if (steer.mag() > 0) {
+              steer.setMag(this.maxSpeed);
+              steer.sub(this.velocity);
+              steer.limit(this.maxForce * 2); // Allow stronger separation
+            }
+          }
+
+          return steer;
+        }
+
+        // Alignment behavior: Boids match the velocity of nearby boids
+        align(boids) {
+          const steering = this.sk.createVector();
+          let total = 0;
+
+          // Loop through nearby boids and average their velocity
+          for (let other of boids) {
+            const d = this.position.dist(other.position); // Distance between boids
+            if (other !== this && d < this.perception) {
+              steering.add(other.velocity); // Add velocity of nearby boids
+              total++;
+            }
+          }
+
+          if (total > 0) {
+            steering.div(total); // Average velocity
+            steering.setMag(this.maxSpeed); // Scale to max speed
+            steering.sub(this.velocity); // Steer to match velocity
+            steering.limit(this.maxForce); // Limit steering force
+          }
+
+          return steering;
+        }
+
+        // Cohesion behavior: Boids move toward the center of nearby boids
+        cohesion(boids) {
+          const center = this.sk.createVector();
+          let total = 0;
+
+          // Loop through nearby boids and average their positions
+          for (let other of boids) {
+            const d = this.position.dist(other.position); // Distance between boids
+            if (other !== this && d < this.perception) {
+              center.add(other.position); // Add position of nearby boids
+              total++;
+            }
+          }
+
+          if (total > 0) {
+            center.div(total); // Average positions of nearby boids
+            const desired = p5.Vector.sub(center, this.position); // Steer towards center
+            desired.setMag(this.maxSpeed); // Scale to max speed
+            desired.sub(this.velocity); // Calculate the steering direction
+            desired.limit(this.maxForce); // Limit the force applied
+            return desired;
+          }
+
+          return this.sk.createVector();
+        }
+      }
+
+      new p5((sketch) => {
+        let boids = [];
+        sketch.setup = () => {
+          sketch.createCanvas(sketch.windowWidth, sketch.windowHeight);
+          sketch.colorMode(sketch.HSB, 360, 100, 100, 100);
+          sketch.background(195, 40, 95); // light aquatic background
+
+          for (let i = 0; i < 100; i++) boids.push(new Boid(sketch));
+
+          sketch.select("#boidCount").elt.addEventListener("change", (e) => {
+            const count = parseInt(e.target.value);
+            sketch.select("#boidCountLabel").html(count);
+            boids = [];
+            for (let i = 0; i < count; i++) boids.push(new Boid(sketch));
+          });
+
+          const sliders = [
+            { id: "boidCount", label: "boidCountLabel" },
+            { id: "sepSlider", label: "sepLabel" },
+            { id: "alignSlider", label: "alignLabel" },
+            { id: "cohSlider", label: "cohLabel" },
+            { id: "maxForceSlider", label: "maxForceLabel" },
+            { id: "maxSpeedSlider", label: "maxSpeedLabel" },
+            { id: "accelSlider", label: "accelLabel" },
+            { id: "perSlider", label: "perLabel" },
+          ];
+          sliders.forEach(({ id, label }) => {
+            sketch.select(`#${id}`).elt.addEventListener("input", (e) => {
+              sketch.select(`#${label}`).html(parseFloat(e.target.value));
+            });
+          });
+        };
+
+        sketch.draw = () => {
+          // Transparent fill for short trails to reduce trail persistence
+          sketch.fill(195, 40, 95, 25); // Semi-transparent to reduce the visual clutter of trails
+          sketch.noStroke();
+          sketch.rect(0, 0, sketch.width, sketch.height); // Clears the screen with background
+
+          // Retrieving the current weights for each flocking behavior from sliders
+          const sepWeight = parseFloat(sketch.select("#sepSlider").elt.value); // Separation weight
+          const alignWeight = parseFloat(sketch.select("#alignSlider").elt.value); // Alignment weight
+          const cohWeight = parseFloat(sketch.select("#cohSlider").elt.value); // Cohesion weight
+          const maxForceVal = parseFloat(sketch.select("#maxForceSlider").elt.value); // Max allowable force applied to boids
+          const maxSpeedVal = parseFloat(sketch.select("#maxSpeedSlider").elt.value); // Max speed a boid can move
+          const accelScale = parseFloat(sketch.select("#accelSlider").elt.value); // Scaling for acceleration based on user input
+          const perceptionVal = parseFloat(sketch.select("#perSlider").elt.value); // Max perception distance for boids
+
+          // Update each boid's behavior
+          for (const boid of boids) {
+            boid.flock(boids, sepWeight, alignWeight, cohWeight, maxForceVal, maxSpeedVal, accelScale, perceptionVal);
+            boid.update(); // Update position and velocity based on acceleration
+            boid.edges(); // Check and wrap boid around screen edges
+            boid.show(); // Draw the boid
+          }
+        };
+      });
+    </script>
+  </body>
+</html>
