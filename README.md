@@ -1,2 +1,2 @@
-# boids
-Javascript Boids
+# Boids
+Javascript Boids madde as a hobby project
